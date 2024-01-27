@@ -1,0 +1,15 @@
+[GoogleSheets]
+sheet_id = 1zA8LA-OAhrAT5WRVHWI3fYfbXDsBXs95Xa8pGNj0sXYZ
+range_name = 'Sheet1!A32:F149'
+worksheet_name = 'Sheet1'
+
+[MySQL]
+host = mariadb
+database = dbname
+user = mynameis
+password = letmein
+user_id = 1
+
+[General]
+keyfile_name = /app/scripts/keyfile.json
+

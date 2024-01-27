@@ -1,0 +1,53 @@
+version: "3.9"
+
+#networks:
+  #default:
+    #driver: host
+
+services:
+  app:
+    image: grafana/grafana:latest
+    container_name: grafana
+    privileged: true
+    #network_mode: host
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+    #networks:
+      #- default
+    ports:
+      - 3333:3000
+    #user: $PUID
+    volumes:
+      - $DOCKERDIR/appconfig/grafana:/etc/grafana/:rw
+      - $DOCKERDIR/appdata/grafana:/var/lib/grafana/:rw
+    environment:
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel,grafana-piechart-panel,petrslavotinek-carpetplot-panel,macropower-analytics-panel,digrich-bubblechart-panel,neocat-cal-heatmap-panel,grafana-googlesheets-datasource"
+      GF_SECURITY_ADMIN_USER: username
+      GF_SECURITY_ADMIN_PASSWORD: letmein
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: grafanadb
+      MYSQL_USER: grafana
+      MYSQL_PASSWORD: letmein
+    volumes:
+      - $DOCKERDIR/appdata/mariadb:/var/lib/mysql
+      - $DOCKERDIR/appconfig/mariadb:/etc/mysql
+    ports:
+      - "3336:3306"
+
+  script-runner:
+    image: script-runner
+    container_name: script-runner
+    volumes:
+      - $DOCKERDIR/scripts:/app/scripts
+      - $DOCKERDIR/crontabs:/etc/cron.d
+    depends_on:
+      - mariadb
+
