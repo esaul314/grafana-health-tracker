@@ -5,49 +5,60 @@ import pandas as pd
 import mysql.connector
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import logging
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
-def get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, range_name='A:F'):
+def get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mappings, start_row=1):
+
     scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets',"https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(keyfile_name, scope)
     client = gspread.authorize(creds)
+    sheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
 
-    sheet = client.open_by_key(sheet_id).worksheet('Sheet1')
+    fetched_columns = {}
+    for field, col in column_mappings.items():
+        col_range = f'{col}{start_row}:{col}'
+        # logging.info(f"Fetching data for {col_range}")
+        fetched_data = sheet.get(col_range)
+        fetched_columns[field] = [item for sublist in fetched_data for item in sublist]
+        # logging.info(f"Fetched data for {field} (Column {col}): {fetched_data}")
 
-    tstamp_data = sheet.col_values(1)[31:]  # Column A, starting from row 32
-    systolic_data = sheet.col_values(3)[31:]  # Column C
-    diastolic_data = sheet.col_values(4)[31:]  # Column D
-    pulse_data = sheet.col_values(5)[31:]  # Column E
-    comment_data = sheet.col_values(6)[31:]  # Column F
 
-    data = zip(tstamp_data, systolic_data, diastolic_data, pulse_data, comment_data)
-    df = pd.DataFrame(data, columns=['tstamp', 'systolic', 'diastolic', 'pulse', 'comment'])
+    data = list(zip(*fetched_columns.values()))
+    # logging.info(f"Data: {data}")
+
+    df = pd.DataFrame(data, columns=list(column_mappings.keys()))
+
     return df
 
-    # data = sheet.get('A32:E')
-    # return pd.DataFrame(data[1:], columns=['tstamp', 'systolic', 'diastolic', 'pulse', 'comment'])
-
 def insert_data_to_mysql(df, mysql_config, user_id=1):
-    conn = mysql.connector.connect(**mysql_config)
-    cursor = conn.cursor()
+    try:
+        conn = mysql.connector.connect(**mysql_config)
+        cursor = conn.cursor()
 
+        insert_query = """
+        INSERT INTO slipstreamdb.blood_pressure (systolic, diastolic, pulse, comment, user_id, tstamp, created)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
 
-    insert_query = """
-    INSERT INTO slipstreamdb.blood_pressure (systolic, diastolic, pulse, comment, user_id, tstamp, created)
-    VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """
+        for row in df.itertuples(index=False):
+            # logging.info(f"Row: {row}")
+            if any(field == '' for field in [row.systolic, row.diastolic, row.pulse, row.tstamp]):
+                raise ValueError(f"Empty field detected in row: {row}")
 
-    for row in df.itertuples(index=False):
-        if any(field == '' for field in [row.systolic, row.diastolic, row.pulse, row.tstamp]):
-            raise ValueError(f"Empty field detected in row: {row}")
+            cursor.execute("SELECT COUNT(*) FROM slipstreamdb.blood_pressure WHERE tstamp = %s", (row.tstamp,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(insert_query, (row.systolic, row.diastolic, row.pulse, row.comment, user_id, row.tstamp, datetime.now()))
 
-        cursor.execute("SELECT COUNT(*) FROM slipstreamdb.blood_pressure WHERE tstamp = %s", (row.tstamp,))
-        if cursor.fetchone()[0] == 0:
-            cursor.execute(insert_query, (row.systolic, row.diastolic, row.pulse, row.comment, user_id, row.tstamp, datetime.now()))
+        conn.commit()
 
-    conn.commit()
-    cursor.close()
-    conn.close()
+    except Exception as e:
+        logging.error(f"Error inserting data to MySQL: {e}")
+
+    finally:
+        cursor.close()
+        conn.close()
 
 def main():
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -70,7 +81,19 @@ def main():
         'database': config['MySQL']['database']
     }
 
-    df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name)
+    column_mappings = {
+        'tstamp': config['GoogleSheets']['tstamp_column'],
+        'systolic': config['GoogleSheets']['systolic_column'],
+        'diastolic': config['GoogleSheets']['diastolic_column'],
+        'pulse': config['GoogleSheets']['pulse_column'],
+        'comment': config['GoogleSheets']['comment_column']
+    }
+
+    start_row = config['GoogleSheets'].getint('start_row', 1)
+    df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mappings, start_row)
+
+
+    # df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name)
     insert_data_to_mysql(df, mysql_config, user_id=1)
 
 if __name__ == '__main__':
