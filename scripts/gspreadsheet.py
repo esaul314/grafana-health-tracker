@@ -10,7 +10,6 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 def get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mappings, start_row=1):
-
     scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets',"https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(keyfile_name, scope)
     client = gspread.authorize(creds)
@@ -24,12 +23,9 @@ def get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mapping
         fetched_columns[field] = [item for sublist in fetched_data for item in sublist]
         # logging.info(f"Fetched data for {field} (Column {col}): {fetched_data}")
 
-
     data = list(zip(*fetched_columns.values()))
     # logging.info(f"Data: {data}")
-
     df = pd.DataFrame(data, columns=list(column_mappings.keys()))
-
     return df
 
 def insert_data_to_mysql(df, mysql_config, user_id=1):
@@ -37,8 +33,8 @@ def insert_data_to_mysql(df, mysql_config, user_id=1):
         conn = mysql.connector.connect(**mysql_config)
         cursor = conn.cursor()
 
-        insert_query = """
-        INSERT INTO slipstreamdb.blood_pressure (systolic, diastolic, pulse, comment, user_id, tstamp, created)
+        insert_query = f"""
+        INSERT INTO {mysql_config['database']}.blood_pressure (systolic, diastolic, pulse, comment, user_id, tstamp, created)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
 
@@ -47,7 +43,7 @@ def insert_data_to_mysql(df, mysql_config, user_id=1):
             if any(field == '' for field in [row.systolic, row.diastolic, row.pulse, row.tstamp]):
                 raise ValueError(f"Empty field detected in row: {row}")
 
-            cursor.execute("SELECT COUNT(*) FROM slipstreamdb.blood_pressure WHERE tstamp = %s", (row.tstamp,))
+            cursor.execute(f"SELECT COUNT(*) FROM {mysql_config['database']}.blood_pressure WHERE tstamp = %s", (row.tstamp,))
             if cursor.fetchone()[0] == 0:
                 cursor.execute(insert_query, (row.systolic, row.diastolic, row.pulse, row.comment, user_id, row.tstamp, datetime.now()))
 
@@ -61,8 +57,8 @@ def insert_data_to_mysql(df, mysql_config, user_id=1):
         conn.close()
 
 def main():
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('--keyfile', help='Path to the Google service account keyfile', default=None)
+    parser = argparse.ArgumentParser(description='Read blood pressure data from a Google Sheet and insert into a DB.')
+    parser.add_argument('--keyfile', help='Path to the Google service account keyfile', default='/app/scripts/keyfile.json')
     parser.add_argument('--config', help='Path to config file', default='/app/scripts/config.ini')
     args = parser.parse_args()
 
@@ -93,7 +89,6 @@ def main():
     df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mappings, start_row)
 
 
-    # df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name)
     insert_data_to_mysql(df, mysql_config, user_id=1)
 
 if __name__ == '__main__':

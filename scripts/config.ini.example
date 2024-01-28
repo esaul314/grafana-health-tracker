@@ -2,6 +2,13 @@
 sheet_id = 1zA8LA-OAhrAT5WRVHWI3fYfbXDsBXs95Xa8pGNj0sXYZ
 range_name = 'Sheet1!A32:F149'
 worksheet_name = 'Sheet1'
+columns = A,C,D,E,F
+start_row = 32
+tstamp_column = A
+systolic_column = C
+diastolic_column = D
+pulse_column = E
+comment_column = F
 
 [MySQL]
 host = mariadb
