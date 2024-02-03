@@ -88,7 +88,6 @@ def main():
     start_row = config['GoogleSheets'].getint('start_row', 1)
     df = get_google_sheet_data(sheet_id, worksheet_name, keyfile_name, column_mappings, start_row)
 
-
     insert_data_to_mysql(df, mysql_config, user_id=1)
 
 if __name__ == '__main__':
